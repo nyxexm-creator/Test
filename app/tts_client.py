@@ -10,7 +10,7 @@ import requests
 class TTSClient:
     DEFAULT_API_KEY = ""
     DEFAULT_VOICE_ID = "gwHENuEWgtpEbgY82YJ5"
-    DEFAULT_OUTPUT_FORMAT = "mp3_44100_128"
+    DEFAULT_OUTPUT_FORMAT = "wav_24000"
 
     def __init__(
         self,
@@ -42,7 +42,7 @@ class TTSClient:
         headers = {
             "xi-api-key": self.api_key,
             "Content-Type": "application/json",
-            "Accept": "audio/mpeg" if self.output_format.startswith("mp3_") else "audio/*",
+            "Accept": self._accept_header(),
         }
 
         data = {
@@ -80,23 +80,27 @@ class TTSClient:
             preview = stripped_content[:200].decode("utf-8", errors="replace")
             raise ValueError(f"ElevenLabs returned non-audio data: {preview}")
 
-        if content.startswith(b"RIFF") or self.output_format.startswith("wav_"):
+        if content.startswith(b"RIFF"):
             return self._write_temp_file(content, ".wav")
 
-        if (
-            self._is_mp3(content)
-            or media_type in {"audio/mpeg", "audio/mp3", "audio/x-mpeg"}
-            or self.output_format.startswith("mp3_")
-        ):
+        if self._is_mp3(content):
             return self._write_temp_file(content, ".mp3")
 
         if self.output_format.startswith("pcm_"):
             sample_rate = self._sample_rate_from_output_format()
             return self._write_pcm_as_wav(content, sample_rate)
 
+        preview = content[:16].hex(" ")
         raise ValueError(
-            "Unsupported audio response. Check ELEVENLABS_OUTPUT_FORMAT and API plan.",
+            f"Unsupported audio response ({media_type=}, first_bytes={preview})",
         )
+
+    def _accept_header(self) -> str:
+        if self.output_format.startswith("mp3_"):
+            return "audio/mpeg"
+        if self.output_format.startswith("wav_"):
+            return "audio/wav"
+        return "audio/*"
 
     @staticmethod
     def _is_mp3(content: bytes) -> bool:
