@@ -10,7 +10,7 @@ import requests
 class TTSClient:
     DEFAULT_API_KEY = ""
     DEFAULT_VOICE_ID = "gwHENuEWgtpEbgY82YJ5"
-    DEFAULT_OUTPUT_FORMAT = "wav_24000"
+    DEFAULT_OUTPUT_FORMAT = "pcm_24000"
 
     def __init__(
         self,
@@ -76,7 +76,11 @@ class TTSClient:
 
         media_type = content_type.partition(";")[0].strip().lower()
         stripped_content = content.lstrip()
-        if stripped_content.startswith((b"{", b"[")):
+        if (
+            media_type.startswith("text/")
+            or media_type == "application/json"
+            or stripped_content.startswith((b"{", b"[", b"<"))
+        ):
             preview = stripped_content[:200].decode("utf-8", errors="replace")
             raise ValueError(f"ElevenLabs returned non-audio data: {preview}")
 
