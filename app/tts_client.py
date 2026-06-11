@@ -1,3 +1,6 @@
+import platform
+import shutil
+import subprocess
 import tempfile
 import wave
 from pathlib import Path
@@ -11,12 +14,14 @@ class TTSClient:
     DEFAULT_API_KEY = ""
     DEFAULT_VOICE_ID = "gwHENuEWgtpEbgY82YJ5"
     DEFAULT_OUTPUT_FORMAT = "pcm_24000"
+    DEFAULT_SYSTEM_FALLBACK = True
 
     def __init__(
         self,
         api_key: str | None = None,
         voice_id: str | None = None,
         output_format: str | None = None,
+        system_fallback: bool | None = None,
     ):
         self.api_key = (api_key or self.DEFAULT_API_KEY).strip()
         if not self.api_key:
@@ -27,6 +32,9 @@ class TTSClient:
 
         self.voice_id = voice_id or self.DEFAULT_VOICE_ID
         self.output_format = output_format or self.DEFAULT_OUTPUT_FORMAT
+        self.system_fallback = (
+            self.DEFAULT_SYSTEM_FALLBACK if system_fallback is None else system_fallback
+        )
 
         pygame.mixer.init(frequency=44100, size=-16, channels=2)
 
@@ -67,8 +75,10 @@ class TTSClient:
             self._play_audio(audio_file)
         except requests.RequestException as exc:
             print(f"ElevenLabs request failed: {exc}")
+            self._speak_with_system_voice(text)
         except Exception as exc:
             print(f"TTS playback failed: {exc}")
+            self._speak_with_system_voice(text)
 
     def _write_audio_file(self, content: bytes, content_type: str = "") -> Path:
         if not content:
@@ -161,3 +171,40 @@ class TTSClient:
                 filepath.unlink(missing_ok=True)
             except OSError:
                 pass
+
+    def _speak_with_system_voice(self, text: str):
+        if not self.system_fallback:
+            return
+
+        try:
+            if platform.system() == "Windows":
+                self._speak_with_windows_sapi(text)
+            elif platform.system() == "Darwin" and shutil.which("say"):
+                subprocess.run(["say", text], check=False)
+            elif shutil.which("spd-say"):
+                subprocess.run(["spd-say", text], check=False)
+            elif shutil.which("espeak"):
+                subprocess.run(["espeak", text], check=False)
+            else:
+                print("System TTS fallback is unavailable on this machine.")
+        except Exception as exc:
+            print(f"System TTS fallback failed: {exc}")
+
+    def _speak_with_windows_sapi(self, text: str):
+        powershell = shutil.which("powershell") or shutil.which("pwsh")
+        if not powershell:
+            print("PowerShell is unavailable for Windows TTS fallback.")
+            return
+
+        escaped_text = text.replace("'", "''")
+        script = (
+            "Add-Type -AssemblyName System.Speech; "
+            "$synth = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
+            "$synth.Rate = 2; "
+            "$synth.Volume = 100; "
+            f"$synth.Speak('{escaped_text}');"
+        )
+        subprocess.run(
+            [powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+            check=False,
+        )
