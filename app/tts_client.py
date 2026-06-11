@@ -60,21 +60,34 @@ class TTSClient:
             response = requests.post(self.url, json=data, headers=headers, timeout=15)
             response.raise_for_status()
 
-            audio_file = self._write_audio_file(response.content)
+            audio_file = self._write_audio_file(
+                response.content,
+                response.headers.get("Content-Type", ""),
+            )
             self._play_audio(audio_file)
         except requests.RequestException as exc:
             print(f"ElevenLabs request failed: {exc}")
         except Exception as exc:
             print(f"TTS playback failed: {exc}")
 
-    def _write_audio_file(self, content: bytes) -> Path:
+    def _write_audio_file(self, content: bytes, content_type: str = "") -> Path:
         if not content:
             raise ValueError("ElevenLabs returned an empty audio response.")
 
-        if content.startswith(b"RIFF"):
+        media_type = content_type.partition(";")[0].strip().lower()
+        stripped_content = content.lstrip()
+        if stripped_content.startswith((b"{", b"[")):
+            preview = stripped_content[:200].decode("utf-8", errors="replace")
+            raise ValueError(f"ElevenLabs returned non-audio data: {preview}")
+
+        if content.startswith(b"RIFF") or self.output_format.startswith("wav_"):
             return self._write_temp_file(content, ".wav")
 
-        if content.startswith(b"ID3") or content[:2] == b"\xff\xfb":
+        if (
+            self._is_mp3(content)
+            or media_type in {"audio/mpeg", "audio/mp3", "audio/x-mpeg"}
+            or self.output_format.startswith("mp3_")
+        ):
             return self._write_temp_file(content, ".mp3")
 
         if self.output_format.startswith("pcm_"):
@@ -83,6 +96,19 @@ class TTSClient:
 
         raise ValueError(
             "Unsupported audio response. Check ELEVENLABS_OUTPUT_FORMAT and API plan.",
+        )
+
+    @staticmethod
+    def _is_mp3(content: bytes) -> bool:
+        if content.startswith(b"ID3"):
+            return True
+
+        # MP3 streams can start with FF FB, FF F3, FF F2, etc. depending on
+        # MPEG version/layer, so check the 11-bit frame sync instead.
+        return (
+            len(content) >= 2
+            and content[0] == 0xFF
+            and (content[1] & 0xE0) == 0xE0
         )
 
     def _sample_rate_from_output_format(self) -> int:
