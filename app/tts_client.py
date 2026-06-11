@@ -1,4 +1,3 @@
-import os
 import tempfile
 import wave
 from pathlib import Path
@@ -9,6 +8,7 @@ import requests
 
 
 class TTSClient:
+    DEFAULT_API_KEY = ""
     DEFAULT_VOICE_ID = "gwHENuEWgtpEbgY82YJ5"
     DEFAULT_OUTPUT_FORMAT = "mp3_44100_128"
 
@@ -18,15 +18,15 @@ class TTSClient:
         voice_id: str | None = None,
         output_format: str | None = None,
     ):
-        self.api_key = api_key or os.getenv("ELEVENLABS_API_KEY")
+        self.api_key = (api_key or self.DEFAULT_API_KEY).strip()
         if not self.api_key:
-            raise ValueError("Set ELEVENLABS_API_KEY before using TTSClient.")
+            raise ValueError(
+                "Pass your ElevenLabs key as TTSClient(api_key='...') "
+                "or set TTSClient.DEFAULT_API_KEY locally.",
+            )
 
-        self.voice_id = voice_id or os.getenv("ELEVENLABS_VOICE_ID", self.DEFAULT_VOICE_ID)
-        self.output_format = output_format or os.getenv(
-            "ELEVENLABS_OUTPUT_FORMAT",
-            self.DEFAULT_OUTPUT_FORMAT,
-        )
+        self.voice_id = voice_id or self.DEFAULT_VOICE_ID
+        self.output_format = output_format or self.DEFAULT_OUTPUT_FORMAT
 
         pygame.mixer.init(frequency=44100, size=-16, channels=2)
 
